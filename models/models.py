@@ -59,7 +59,9 @@ class woocommerce_connector(models.Model):
         else:
             ids = ','.join(ids_arr)
 
-        response = wcapi.get("products", params={"exclude": ids})
+        # excludes are highly likely busting the size limit of GET on large datasets
+        #response = wcapi.get("products", params={"exclude": ids})
+        response = wcapi.get("products")
         _logger.info('products ignore %s', ids)
         _logger.info('product status code %s', response.status_code)
         if not response.status_code == 200:
@@ -185,7 +187,7 @@ class woocommerce_connector(models.Model):
                     'company_type': "person",
                     'category_id': [[6, 'false', []]],
                     'city':  data['billing']['city'],  
-                    'country_id': data['billing']['country'],
+                    # 'country_id': data['billing']['country'],
                     'email': data['billing']['email'],
                     'mobile': data['billing']['phone'],
                     'name': data['first_name'] + " " + data['last_name'],                  
@@ -210,7 +212,7 @@ class woocommerce_connector(models.Model):
         existing_orders = self.env['woocommerce.orders'].search([])
         ids_arr = []
         for obj in existing_orders:
-            ids_arr.append(obj['order_id'])
+            ids_arr.append(str(obj['order_id']))
         ids = None
         if len(ids_arr) == 0:
             ids = None
@@ -269,7 +271,10 @@ class woocommerce_connector(models.Model):
 
             _logger.info("customer_id: %s", data['customer_id'])
             _logger.info("data_created: %s", data['date_created'].replace("T",""))
-            partner = self.env['res.partner'].search([('email','=', data['billing']['email'])])
+
+            # @todo: be aware of problems with non unique mail-adresses
+            partner = self.env['res.partner'].search([('email','=', data['billing']['email'])], limit=1)
+            _logger.info(partner.id)
             #partner = self.env['res.partner'].search([('ref','=', data['customer_id'])])
             vals= {
                 # 'note': data['id'], # this is the unique ID of a order of woocommerce
@@ -281,6 +286,7 @@ class woocommerce_connector(models.Model):
                 }
 
             _logger.info("creating order %s from customer %s", data['id'], data['billing']['email'])
+            _logger.info("vals %s", vals)
             sale_order = self.env['sale.order']
             values = sale_order.create(vals)
             sale_order_id = values.id
@@ -292,9 +298,10 @@ class woocommerce_connector(models.Model):
                         'product_id': product.id,
                         'price_unit': lines['price'],
                         'product_uom_qty': lines['quantity'],
+                        'name': '@fixme',
                     }
                 sale_order_line = self.env['sale.order.line']
-                new_line = sale_order_line.create(order_line)
+                #new_line = sale_order_line.create(order_line)
                 
         config_data.last_synced = datetime.datetime.now()
 
