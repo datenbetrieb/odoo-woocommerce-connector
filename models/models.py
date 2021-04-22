@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
+from woocommerce import API
 
 from odoo import models, fields, api, _
 import requests
 from requests.auth import HTTPBasicAuth
 import time
 import datetime
-
+from odoo.exceptions import UserError
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -41,25 +42,29 @@ class woocommerce_connector(models.Model):
     def sync_woocommerce(self, vals):
         config_data = self.env['woocommerce.configuration'].search([])
 
+        wcapi = API(
+            url = config_data['con_url'],
+            consumer_key = config_data['consumer_key'],
+            consumer_secret = config_data['consumer_secret'],
+            version = "wc/v3"
+        )
+
         existing_products = self.env['woocommerce.products'].search([])
         ids_arr = []
         for obj in existing_products:
-            ids_arr.append(obj['product_id'])
-        ids = ''
+            ids_arr.append(str(obj['product_id']))
+        ids = None
         if len(ids_arr) == 0:
-            ids = ''
+            ids = None
         else:
             ids = ','.join(ids_arr)
 
-        woocommerce_auth = HTTPBasicAuth(config_data['consumer_key'], config_data['consumer_secret'])
-        
-        response = requests.get(config_data['con_url'] + config_data['con_endpoint'] + 
-                "products?consumer_key=" + config_data['consumer_key'] + "&consumer_secret="
-                + config_data['consumer_secret'] + "&exclude=" + ids)
-
-
-        _logger.info('status code %s', response.status_code)
-        _logger.info('preview of response %s', response.text[0:100])
+        response = wcapi.get("products", params={"exclude": ids})
+        _logger.info('products ignore %s', ids)
+        _logger.info('product status code %s', response.status_code)
+        if not response.status_code == 200:
+            msg = _('Failure %s with REST-Api on %s, check woocommerce-sync-settings and server-logs.') % (response.text[0:30], config_data['con_url'])
+            raise UserError(msg)
 
         jsonObject = response.json()
  
@@ -137,16 +142,18 @@ class woocommerce_connector(models.Model):
         ids_arr = []
         for obj in existing_customers:
             ids_arr.append(obj['email'])
-        ids = ''
+        ids = None
         if len(ids_arr) == 0:
-            ids = ''
+            ids = None
         else:
             ids = ','.join(ids_arr)
 
-        response = requests.get(config_data['con_url'] + config_data['con_endpoint'] + 
-                    "customers?consumer_key=" + config_data['consumer_key'] +"&consumer_secret=" + 
-                        config_data['consumer_secret']+"&exclude=" + ids + "&role=all")
-
+        response = wcapi.get("customers", params={"exclude": ids, "role": "all"})
+        _logger.info('customers ignore %s', ids)
+        _logger.info('customer status code %s', response.status_code)
+        if not response.status_code == 200:
+            msg = _('Failure %s with REST-Api on %s, check woocommerce-sync-settings and server-logs.') % (response.text[0:100], config_data['con_url'])
+            raise UserError(msg)
 
         jsonObject = response.json()
  
@@ -204,15 +211,19 @@ class woocommerce_connector(models.Model):
         ids_arr = []
         for obj in existing_orders:
             ids_arr.append(obj['order_id'])
-        ids = ''
+        ids = None
         if len(ids_arr) == 0:
-            ids = ''
+            ids = None
         else:
             ids = ','.join(ids_arr)
+ 
+        response = wcapi.get("orders", params={"exclude": ids})
+        _logger.info('orders ignore %s', ids)
+        _logger.info('orders status code %s', response.status_code)
+        if not response.status_code == 200:
+            msg = _('Failure with REST-API orders on %s, check woocommerce-sync-settings and server-logs. %s') % (config_data['con_url'], response.text[0:100])
+            raise UserError(msg)
 
-        response = requests.get(config_data['con_url'] + config_data['con_endpoint'] + 
-                    "orders?consumer_key=" + config_data['consumer_key'] +"&consumer_secret=" + 
-                        config_data['consumer_secret']+"&exclude=" + ids)
         jsonObject = response.json()
        
         for data in jsonObject:
